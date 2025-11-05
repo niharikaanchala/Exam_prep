@@ -146,40 +146,123 @@ def current_user(request):
 
 
 # ================= USER PROFILE =================
+# @api_view(["GET"])
+# @authenticate
+# def user_profile(request):
+#     """Get currently logged-in user's profile."""
+#     try:
+#         user_id = request.user.get("id")
+#         if not user_id:
+#             return Response(
+#                 {"error": "User ID not found in token"},
+#                 status=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         user = User.objects.get(id=ObjectId(user_id))
+
+#         return Response(
+#             {
+#                 "id": str(user.id),
+#                 "fullname": user.fullname,
+#                 "email": user.email,
+#                 "phone_number": user.phone_number,
+#                 "role": user.role,
+#                 "location": user.location,
+#             },
+#             status=status.HTTP_200_OK,
+#         )
+
+#     except User.DoesNotExist:
+#         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+#     except jwt.ExpiredSignatureError:
+#         return Response({"error": "Token has expired"}, status=status.HTTP_401_UNAUTHORIZED)
+#     except jwt.InvalidTokenError:
+#         return Response({"error": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+#     except Exception as e:
+#         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from bson import ObjectId
+import jwt
+from .models import User, Admin
+
+
 @api_view(["GET"])
 @authenticate
 def user_profile(request):
-    """Get currently logged-in user's profile."""
+    """Return profile info for logged-in student or admin based on token role."""
     try:
-        user_id = request.user.get("id")
-        if not user_id:
+        payload = request.user  # contains {'id': ..., 'role': ..., 'exp': ...}
+        print("payload : ",payload)
+        user_id = payload.get("id")
+        role = payload.get("role")
+
+        if not user_id or not role:
             return Response(
-                {"error": "User ID not found in token"},
+                {"error": "Invalid token payload: missing user ID or role"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        user = User.objects.get(id=ObjectId(user_id))
+        # ============================
+        # 🧩 STUDENT USER
+        # ============================
+        if role == "student":
+            user = User.objects.get(id=ObjectId(user_id))
+            user_data = user.to_mongo().to_dict()
 
-        return Response(
-            {
-                "id": str(user.id),
-                "fullname": user.fullname,
-                "email": user.email,
-                "phone_number": user.phone_number,
-                "role": user.role,
-                "location": user.location,
-            },
-            status=status.HTTP_200_OK,
-        )
+            user_data["id"] = str(user_data.pop("_id"))
+            user_data["role"] = "student"
+
+            if "enrolled_courses" in user_data:
+                user_data["enrolled_courses"] = [
+                    str(course.id) for course in user.enrolled_courses
+                ]
+
+            user_data.pop("password", None)
+
+            return Response(
+                {"success": True, "role": "student", "profile": user_data},
+                status=status.HTTP_200_OK,
+            )
+
+        # ============================
+        # 🧩 ADMIN USER
+        # ============================
+        elif role == "admin":
+            admin = Admin.objects.get(_id=ObjectId(user_id))
+            admin_data = admin.to_mongo().to_dict()
+
+            admin_data["id"] = str(admin_data.pop("_id"))
+            admin_data["role"] = "admin"
+            admin_data.pop("password", None)
+
+            return Response(
+                {"success": True, "role": "admin", "profile": admin_data},
+                status=status.HTTP_200_OK,
+            )
+
+        else:
+            return Response(
+                {"error": f"Unknown role '{role}' in token"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
     except User.DoesNotExist:
-        return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Student user not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Admin.DoesNotExist:
+        return Response({"error": "Admin not found"}, status=status.HTTP_404_NOT_FOUND)
     except jwt.ExpiredSignatureError:
         return Response({"error": "Token has expired"}, status=status.HTTP_401_UNAUTHORIZED)
     except jwt.InvalidTokenError:
         return Response({"error": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
     except Exception as e:
+        print("error : ",e)
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 from rest_framework.decorators import api_view

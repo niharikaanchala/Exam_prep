@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import Blog
@@ -17,17 +18,23 @@ def create_blog(request):
 
     try:
         data = json.loads(request.body)
+
+        # ✅ Extract Cloudinary image URL sent from frontend
+        image_url = data.get("image_url") or data.get("image")
+
         blog = Blog(
-            title=data.get("title"),
-            excerpt=data.get("excerpt"),
-            category=data.get("category"),
-            author=data.get("author"),
-            date=data.get("date"),
-            read_time=data.get("readTime"),
-            image=data.get("image"),
+            title=data.get("title", ""),
+            excerpt=data.get("excerpt", ""),
+            category=data.get("category", ""),
+            author=data.get("author", ""),
+            date=datetime.strptime(data.get("date"), "%Y-%m-%d") if data.get("date") else datetime.utcnow(),
+            read_time=data.get("readTime", ""),
+            image_url=image_url,  # ✅ stored correctly
         )
+
         blog.save()
         return JsonResponse({"success": True, "message": "Blog created successfully"}, status=201)
+
     except Exception as e:
         return JsonResponse({"success": False, "message": str(e)}, status=400)
 
@@ -85,12 +92,31 @@ def update_blog(request, blog_id):
         blog = Blog.objects.get(id=blog_id)
         data = json.loads(request.body)
 
-        for field in ["title", "excerpt", "category", "author", "date", "readTime", "image"]:
-            if field in data:
-                setattr(blog, field if field != "readTime" else "read_time", data[field])
+        # ✅ Map frontend keys to backend model fields
+        field_map = {
+            "title": "title",
+            "excerpt": "excerpt",
+            "category": "category",
+            "author": "author",
+            "date": "date",
+            "readTime": "read_time",
+            "image_url": "image_url",  # ✅ key used by frontend
+            "image": "image_url",      # ✅ also accept "image" for compatibility
+        }
+
+        for frontend_field, model_field in field_map.items():
+            if frontend_field in data:
+                value = data[frontend_field]
+                if model_field == "date" and value:
+                    try:
+                        value = datetime.strptime(value, "%Y-%m-%d")
+                    except:
+                        pass
+                setattr(blog, model_field, value)
 
         blog.save()
         return JsonResponse({"success": True, "message": "Blog updated successfully"}, status=200)
+
     except Blog.DoesNotExist:
         return JsonResponse({"success": False, "message": "Blog not found"}, status=404)
     except Exception as e:

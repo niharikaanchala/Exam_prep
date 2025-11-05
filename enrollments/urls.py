@@ -9,11 +9,13 @@ from .views import (
     check_practice_enrollment,
     create_razorpay_order,
     verify_razorpay_payment,
+    get_user_enrollments,
 )
 
 urlpatterns = [
     # Check if user enrolled
     path("", get_enrollments, name="get_enrollments"),
+    path("user/", get_user_enrollments, name="get_user_enrollments"),
     path("check/<str:category_id>/", check_enrollment, name="check_enrollment"),
     
 

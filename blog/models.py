@@ -9,7 +9,7 @@ class Blog(Document):
     author = StringField(max_length=100)
     date = DateTimeField(default=datetime.utcnow)
     read_time = StringField()
-    image = StringField()
+    image_url = StringField()
 
     meta = {"collection": "blogs"}
 
@@ -22,5 +22,5 @@ class Blog(Document):
             "author": self.author,
             "date": self.date.strftime("%Y-%m-%d"),
             "readTime": self.read_time,
-            "image": self.image,
+            "image_url": self.image_url,
         }

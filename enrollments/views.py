@@ -591,60 +591,18 @@ def check_enrollment(request, category_id):
         course_id = str(category_id)
 
         # ✅ Get authenticated user info
-        userId = request.user.get('id')
-        if not userId:
-            return JsonResponse(
-                {"already_enrolled": False, "error": "Invalid user"},
-                status=401
-            )
-        
-        # Convert userId to ObjectId if needed
-        if ObjectId.is_valid(userId):
-            user = User.objects.get(id=ObjectId(userId))
-        else:
-            user = User.objects.get(id=userId)
-        
+        user_data = request.user
+        userId = request.user['id']
+        print(userId)
+        user = User.objects.get(id=userId)
         if not user:
             return JsonResponse(
                 {"already_enrolled": False, "error": "User not found"},
                 status=404
             )
 
-        # ✅ Check if enrolled in user.enrolled_courses
-        enrolled_in_user = any(str(course.id) == course_id for course in user.enrolled_courses)
-        
-        # ✅ Also check Enrollment model (in case user.enrolled_courses wasn't updated)
-        from categories.models import TestCategory
-        if ObjectId.is_valid(course_id):
-            category = TestCategory.objects(id=ObjectId(course_id)).first()
-            if category:
-                # Check with both string user.id and userId from JWT
-                enrollment_exists = None
-                try:
-                    user_id_str = str(user.id)
-                    enrollment_exists = Enrollment.objects(user_name=user_id_str, category=category).first()
-                    # Also check with userId from JWT if different
-                    if not enrollment_exists and user_id_str != userId:
-                        enrollment_exists = Enrollment.objects(user_name=userId, category=category).first()
-                    # Also try checking by category ID as string
-                    if not enrollment_exists:
-                        enrollments = Enrollment.objects(user_name=user_id_str)
-                        for enr in enrollments:
-                            if enr.category and str(enr.category.id) == course_id:
-                                enrollment_exists = enr
-                                break
-                except Exception as e:
-                    print(f"Error checking enrollment: {e}")
-                
-                if enrollment_exists:
-                    # If enrollment exists but not in user.enrolled_courses, add it
-                    if not enrolled_in_user:
-                        if category not in user.enrolled_courses:
-                            user.enrolled_courses.append(category)
-                            user.save()
-                    enrolled_in_user = True
-        
-        enrolled = enrolled_in_user
+        # ✅ Check if the category ID exists in enrolled_courses
+        enrolled = any(str(course.id) == course_id for course in user.enrolled_courses)
 
         return JsonResponse({"already_enrolled": enrolled}, status=200)
 
@@ -676,19 +634,13 @@ def check_practice_enrollment(request, practice_id):
         if not user_id:
             return JsonResponse({"already_enrolled": False, "error": "Invalid user"}, status=401)
 
-        # ✅ Get User object - handle ObjectId conversion
-        if ObjectId.is_valid(user_id):
-            user = User.objects.get(id=ObjectId(user_id))
-        else:
-            user = User.objects.get(id=user_id)
+        # ✅ Get User object
+        user = User.objects.get(id=user_id)
         if not user:
             return JsonResponse({"already_enrolled": False, "error": "User not found"}, status=404)
 
-        # ✅ Get Practice Test - handle ObjectId conversion
-        if ObjectId.is_valid(practice_id):
-            practice = PracticeTest.objects.get(id=ObjectId(practice_id))
-        else:
-            practice = PracticeTest.objects.get(id=practice_id)
+        # ✅ Get Practice Test
+        practice = PracticeTest.objects.get(id=practice_id)
         if not practice:
             return JsonResponse({"already_enrolled": False, "error": "Practice test not found"}, status=404)
 
@@ -697,37 +649,8 @@ def check_practice_enrollment(request, practice_id):
         if not category:
             return JsonResponse({"already_enrolled": False, "error": "Category not linked"}, status=404)
 
-        # ✅ Check if enrolled in user.enrolled_courses
-        enrolled_in_user = any(str(course.id) == str(category.id) for course in user.enrolled_courses)
-        
-        # ✅ Also check Enrollment model (in case user.enrolled_courses wasn't updated)
-        enrollment_exists = None
-        try:
-            # Check with both string user.id and string user_id formats
-            user_id_str = str(user.id)
-            enrollment_exists = Enrollment.objects(user_name=user_id_str, category=category).first()
-            # Also check with user_id from JWT if different
-            if not enrollment_exists and user_id_str != user_id:
-                enrollment_exists = Enrollment.objects(user_name=user_id, category=category).first()
-            # Also try checking by category ID as string
-            if not enrollment_exists:
-                enrollments = Enrollment.objects(user_name=user_id_str)
-                for enr in enrollments:
-                    if enr.category and str(enr.category.id) == str(category.id):
-                        enrollment_exists = enr
-                        break
-        except Exception as e:
-            print(f"Error checking enrollment: {e}")
-        
-        if enrollment_exists:
-            # If enrollment exists but not in user.enrolled_courses, add it
-            if not enrolled_in_user:
-                if category not in user.enrolled_courses:
-                    user.enrolled_courses.append(category)
-                    user.save()
-            enrolled_in_user = True
-        
-        enrolled = enrolled_in_user
+        # ✅ Check if enrolled in that category
+        enrolled = any(str(course.id) == str(category.id) for course in user.enrolled_courses)
 
         return JsonResponse({"already_enrolled": enrolled}, status=200)
 
@@ -752,6 +675,7 @@ from common.middleware import authenticate, restrict  # assuming you have a cust
 
 @csrf_exempt
 @authenticate
+@restrict("admin")
 def get_enrollments(request):
     """Admin-only: Fetch all enrollments"""
     if request.method != "GET":
@@ -767,53 +691,17 @@ def get_enrollments(request):
                 "message": "Authentication required."
             }, status=401)
 
-        # ✅ Handle both dict and object cases - check role instead of is_admin
-        is_admin = False
-        if isinstance(user, dict):
-            is_admin = user.get("role") == "admin"
-        else:
-            is_admin = getattr(user, "role", None) == "admin"
-
-        if not is_admin:
-            return JsonResponse({
-                "success": False,
-                "message": "Unauthorized access. Admins only."
-            }, status=403)
-
-        # ✅ Fetch all enrollments with payment info
+        # ✅ Handle both dict and object cases
+        
+        # ✅ Fetch all enrollments
         enrollments = Enrollment.objects.all()
-        enrollments_data = []
-        for enrollment in enrollments:
-            enrollment_dict = {
-                "id": str(enrollment.id),
-                "user_name": enrollment.user_name,
-                "category": {
-                    "id": str(enrollment.category.id),
-                    "name": enrollment.category.name
-                } if enrollment.category else None,
-                "duration_months": enrollment.duration_months,
-                "enrolled_date": str(enrollment.enrolled_date),
-                "expiry_date": str(enrollment.expiry_date),
-                "payment": None
-            }
-            # Add payment info if exists
-            if enrollment.payment:
-                payment = enrollment.payment
-                enrollment_dict["payment"] = {
-                    "id": str(payment.id),
-                    "razorpay_order_id": payment.razorpay_order_id,
-                    "razorpay_payment_id": payment.razorpay_payment_id or "",
-                    "amount": payment.amount,
-                    "currency": payment.currency,
-                    "status": payment.status,
-                    "paid_at": str(payment.paid_at) if payment.paid_at else None
-                }
-            enrollments_data.append(enrollment_dict)
+        serializer = EnrollmentSerializer(enrollments, many=True)
+        print("serializer : ",serializer.data)
 
         return JsonResponse({
             "success": True,
-            "count": len(enrollments_data),
-            "data": enrollments_data
+            "count": len(serializer.data),
+            "data": serializer.data
         }, status=200)
 
     except Exception as e:
@@ -925,6 +813,77 @@ def update_enrollment(request, enrollment_id):
         return JsonResponse({"success": False, "message": "An error occurred while updating enrollment", "error": str(e)}, status=500)
 
 
+@csrf_exempt
+@authenticate
+def get_user_enrollments(request):
+    """Get all enrollments for the logged-in user with payment info."""
+    if request.method != "GET":
+        return JsonResponse({"success": False, "message": "Method not allowed"}, status=405)
+
+    try:
+        user_id = request.user.get('id')
+        if not user_id:
+            return JsonResponse({
+                "success": False,
+                "message": "Authentication required."
+            }, status=401)
+
+        # Convert userId to ObjectId if needed
+        if ObjectId.is_valid(user_id):
+            user_obj = User.objects.get(id=ObjectId(user_id))
+        else:
+            user_obj = User.objects.get(id=user_id)
+
+        # Fetch enrollments for this user
+        user_id_str = str(user_obj.id)
+        enrollments = Enrollment.objects(user_name=user_id_str)
+        
+        enrollments_data = []
+        for enrollment in enrollments:
+            enrollment_dict = {
+                "id": str(enrollment.id),
+                "category": {
+                    "id": str(enrollment.category.id),
+                    "name": enrollment.category.name
+                } if enrollment.category else None,
+                "duration_months": enrollment.duration_months,
+                "enrolled_date": str(enrollment.enrolled_date),
+                "expiry_date": str(enrollment.expiry_date),
+                "payment": None
+            }
+            # Add payment info if exists
+            if enrollment.payment:
+                payment = enrollment.payment
+                enrollment_dict["payment"] = {
+                    "id": str(payment.id),
+                    "amount": payment.amount,
+                    "currency": payment.currency,
+                    "status": payment.status,
+                    "paid_at": str(payment.paid_at) if payment.paid_at else None
+                }
+            enrollments_data.append(enrollment_dict)
+
+        return JsonResponse({
+            "success": True,
+            "count": len(enrollments_data),
+            "data": enrollments_data
+        }, status=200)
+
+    except User.DoesNotExist:
+        return JsonResponse({
+            "success": False,
+            "message": "User not found"
+        }, status=404)
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({
+            "success": False,
+            "message": "An error occurred while fetching enrollments",
+            "error": str(e)
+        }, status=500)
+
+
 # ==================== RAZORPAY PAYMENT VIEWS ====================
 
 import razorpay
@@ -987,18 +946,20 @@ def create_razorpay_order(request):
         return JsonResponse({
             "success": True,
             "order_id": razorpay_order['id'],
-            "amount": amount,
-            "currency": "INR",
+            "amount": razorpay_order['amount'],
+            "currency": razorpay_order['currency'],
             "key_id": settings.RAZORPAY_KEY_ID,
             "payment_id": str(payment.id)
         }, status=200)
 
     except Exception as e:
-        print(f"❌ Razorpay order creation error: {e}")
+        import traceback
+        print(traceback.format_exc())
         return JsonResponse({"success": False, "message": str(e)}, status=500)
 
 
 @csrf_exempt
+@authenticate
 def verify_razorpay_payment(request):
     """Verify Razorpay payment and create enrollment"""
     if request.method != "POST":
@@ -1006,6 +967,7 @@ def verify_razorpay_payment(request):
 
     try:
         data = json.loads(request.body)
+        user_id = request.user.get("id")
         razorpay_order_id = data.get("razorpay_order_id")
         razorpay_payment_id = data.get("razorpay_payment_id")
         razorpay_signature = data.get("razorpay_signature")
@@ -1018,21 +980,23 @@ def verify_razorpay_payment(request):
 
         # Get payment record
         payment = Payment.objects.get(id=ObjectId(payment_id))
-        
+        if payment.user_id != user_id:
+            return JsonResponse({"success": False, "message": "Unauthorized"}, status=403)
+
         # Verify signature
         message = f"{razorpay_order_id}|{razorpay_payment_id}"
         generated_signature = hmac.new(
-            settings.RAZORPAY_KEY_SECRET.encode(),
-            message.encode(),
+            settings.RAZORPAY_KEY_SECRET.encode('utf-8'),
+            message.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
 
         if generated_signature != razorpay_signature:
             payment.status = "failed"
             payment.save()
-            return JsonResponse({"success": False, "message": "Payment verification failed"}, status=400)
+            return JsonResponse({"success": False, "message": "Invalid payment signature"}, status=400)
 
-        # Payment verified - create enrollment
+        # Get category
         from categories.models import TestCategory
         category = TestCategory.objects(id=ObjectId(category_id)).first()
         if not category:
@@ -1088,25 +1052,16 @@ def verify_razorpay_payment(request):
 
         return JsonResponse({
             "success": True,
-            "message": "Payment successful and enrollment created",
-            "data": {
-                "id": str(enrollment.id),
-                "user_name": user.fullname if user else payment.user_id,
-                "category": {
-                    "id": str(category.id),
-                    "name": category.name
-                },
-                "duration_months": enrollment.duration_months,
-                "enrolled_date": str(enrollment.enrolled_date),
-                "expiry_date": str(enrollment.expiry_date),
-                "payment_id": str(payment.id)
-            }
+            "message": "Payment verified and enrollment created successfully",
+            "enrollment_id": str(enrollment.id)
         }, status=200)
 
     except Payment.DoesNotExist:
-        return JsonResponse({"success": False, "message": "Payment record not found"}, status=404)
+        return JsonResponse({"success": False, "message": "Payment not found"}, status=404)
     except Exception as e:
-        print(f"❌ Payment verification error: {e}")
+        import traceback
+        print(traceback.format_exc())
         return JsonResponse({"success": False, "message": str(e)}, status=500)
+
 
      
