@@ -63,9 +63,10 @@ urlpatterns = [
     path("faqs/update/<str:faq_id>/", update_faq, name="update_faq"),
     path("faqs/delete/<str:faq_id>/", delete_faq, name="delete_faq"),
 
+    path("cta/", get_active_cta_section, name="get_active_cta_section"),
     path("cta/add/", create_cta_section, name="create_cta_section"),
     path("api/cta/update/<str:cta_id>/", update_cta_section, name="update_cta_section"),
     path("api/cta/delete/<str:cta_id>/", delete_cta_section, name="delete_cta_section"),
-    path("cta/", get_active_cta_section, name="get_active_cta_section"),
+    
 
 ]
