@@ -38,11 +38,12 @@ urlpatterns = [
     path("hero/update/<str:hero_id>/", update_hero_section, name="update_hero_section"),
     path("hero/", get_hero_section, name="get_hero_section"),
     path("hero/search/", search_courses, name="search_courses"),
-    
+
+    path("analytics/", get_analytics_stats, name="get_analytics_stats"),
     path("analytics/create/", create_analytics_stat, name="create_analytics_stat"),
     path("analytics/update/<str:stat_id>/", update_analytics_stat, name="update_analytics_stat"),
     path("analytics/delete/<str:stat_id>/", delete_analytics_stat, name="delete_analytics_stat"),
-    path("analytics/", get_analytics_stats, name="get_analytics_stats"),
+    
 
 
     path("features/", get_features, name="get_features"),
@@ -50,11 +51,12 @@ urlpatterns = [
     path("features/update/<str:feature_id>/", update_feature, name="update_feature"),  # PUT/POST
     path("features/delete/<str:feature_id>/", delete_feature, name="delete_feature"),  # DELETE
 
+    path("testimonials/", get_testimonials, name="get_testimonials"),
     path("testimonials/create/", create_testimonial, name="create_testimonial"),
     path("testimonials/update/<str:testimonial_id>/",update_testimonial, name="update_testimonial"),
     path("testimonials/delete/<str:testimonial_id>/", delete_testimonial, name="delete_testimonial"),
     path("testimonials/image/<str:testimonial_id>/", get_testimonial_image, name="get_testimonial_image"),
-    path("testimonials/", get_testimonials, name="get_testimonials"),
+    
 
     path("faqs/", get_faqs, name="get_faqs"),              # Public
     path("faqs/create/", create_faq, name="create_faq"),   # Admin
